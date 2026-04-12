@@ -1,0 +1,34 @@
+services:
+  jellyfin:
+    image: jellyfin/jellyfin:latest
+    container_name: jellyfin
+    restart: unless-stopped
+    ports:
+      - "8096:8096"
+    volumes:
+      - /path/to/config:/config
+      - /path/to/cache:/cache
+      - /path/to/media:/media
+    environment:
+      - JELLYFIN_PublishedServerUrl=https://jellyfin.mooserooster.com
+  wireguard:
+    image: linuxserver/wireguard:latest
+    container_name: wireguard
+    restart: unless-stopped
+    cap_add:
+      - NET_ADMIN
+      - SYS_MODULE
+    ports:
+      - "51820:51820/udp"
+    volumes:
+      - /path/to/config:/config
+  nginx:
+    image: nginx:latest
+    container_name: nginx
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - /path/to/nginx/conf:/etc/nginx/conf.d
+      - /path/to/nginx/certs:/etc/nginx/certs
