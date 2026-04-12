@@ -6,9 +6,11 @@ services:
     ports:
       - "8096:8096"
     volumes:
-      - /path/to/config:/config
-      - /path/to/cache:/cache
-      - /path/to/media:/media
+      - /mnt/jellyfin/config:/config
+      - /mnt/jellyfin/cache:/cache
+      - /mnt/jellyfin/media/music:/music
+      - /mnt/jellyfin/media/movies:/movies
+      - /mnt/jellyfin/media/tv:/tv
     environment:
       - JELLYFIN_PublishedServerUrl=https://jellyfin.mooserooster.com
   wireguard:
@@ -30,5 +32,5 @@ services:
       - "80:80"
       - "443:443"
     volumes:
-      - /path/to/nginx/conf:/etc/nginx/conf.d
-      - /path/to/nginx/certs:/etc/nginx/certs
+      - ./nginx.conf:/etc/nginx/conf.d/default.conf
+      - /mnt/nginx/certs:/etc/nginx/certs
