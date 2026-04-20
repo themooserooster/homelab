@@ -6,11 +6,11 @@ services:
     ports:
       - "8096:8096"
     volumes:
-      - /mnt/jellyfin/config:/config
-      - /mnt/jellyfin/cache:/cache
-      - /mnt/jellyfin/media/music:/music
-      - /mnt/jellyfin/media/movies:/movies
-      - /mnt/jellyfin/media/tv:/tv
+      - ./.jellyfin/config:/config
+      - ./.jellyfin/cache:/cache
+      - /mnt/jellyfin/media/music:/mnt/music
+      - /mnt/jellyfin/media/movies:/mnt/movies
+      - /mnt/jellyfin/media/tv:/mnt/tv
     environment:
       - JELLYFIN_PublishedServerUrl=https://jellyfin.mooserooster.com
   wireguard:
