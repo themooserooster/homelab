@@ -12,4 +12,4 @@ This homelab setup has two main parts:
 ## Apps
 
 * Jellyfin
-* Immich
+* Immich (Someday)
