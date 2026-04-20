@@ -23,7 +23,7 @@ services:
     ports:
       - "51820:51820/udp"
     volumes:
-      - ./wg0.conf:/etc/wireguard/wg0.conf
+      - ./wireguard:/etc/wireguard/
   nginx:
     image: nginx:latest
     container_name: nginx
