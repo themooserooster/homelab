@@ -33,7 +33,7 @@ services:
       - "443:443"
     volumes:
       - ./nginx:/etc/nginx/conf.d/
-      - /etc/ssl/certs:/etc/ssl/certs
+      - ./certs:/etc/letsencrypt
   certbot:
     image: certbot/certbot:latest
     container_name: certbot
@@ -42,3 +42,7 @@ services:
       - ./certbot:/etc/letsencrypt
       - /var/lib/letsencrypt:/var/lib/letsencrypt
       - /var/log/letsencrypt:/var/log/letsencrypt
+    post_start:
+      - command: ./certbot/certbot.sh
+      - user: root
+      - privileged: true
