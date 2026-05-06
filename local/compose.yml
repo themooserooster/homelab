@@ -33,7 +33,7 @@ services:
       - "443:443"
     volumes:
       - /etc/letsencrypt:/etc/letsencrypt
-#       - ./nginx:/etc/nginx/conf.d/
+      - ./nginx:/etc/nginx/conf.d/
   certbot:
     image: certbot/certbot:latest
     container_name: certbot
