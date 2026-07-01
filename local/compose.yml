@@ -42,5 +42,7 @@ services:
       - /etc/letsencrypt:/etc/letsencrypt
       - /var/lib/letsencrypt:/var/lib/letsencrypt
       - /var/log/letsencrypt:/var/log/letsencrypt
+    command: certbot
+      - certonly
     
       
