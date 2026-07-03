@@ -1,4 +1,6 @@
 #!/bin/sh
+
+
 sudo cp ./acme-dns-auth.py /etc/letsencrypt
 
 sudo certbot certonly \
