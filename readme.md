@@ -1,4 +1,4 @@
-# My homelab setup
+# My Homelab Setup
 
 ## Architecture
 
