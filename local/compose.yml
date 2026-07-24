@@ -25,7 +25,7 @@ services:
     volumes:
       - ./wireguard:/etc/wireguard/
   nginx:
-    image: nginx:latest
+    image: nginx:stable
     container_name: nginx
     restart: unless-stopped
     ports:
@@ -33,7 +33,7 @@ services:
       - "443:443"
     volumes:
       - /etc/letsencrypt:/etc/letsencrypt:ro
-      - ./nginx:/etc/nginx/conf.d:ro
+      - ./nginx/conf.d:/etc/nginx/conf.d:ro
   certbot:
     image: certbot/certbot:latest
     container_name: certbot
@@ -42,7 +42,7 @@ services:
       - /etc/letsencrypt:/etc/letsencrypt
       - /var/lib/letsencrypt:/var/lib/letsencrypt
       - /var/log/letsencrypt:/var/log/letsencrypt
-    command: certbot
+    command:
       - certonly
     
       
