@@ -37,12 +37,14 @@ services:
   certbot:
     image: certbot/certbot:latest
     container_name: certbot
-    restart: unless-stopped
+    profiles:
+      - manual
     volumes:
       - /etc/letsencrypt:/etc/letsencrypt
       - /var/lib/letsencrypt:/var/lib/letsencrypt
       - /var/log/letsencrypt:/var/log/letsencrypt
-    command:
-      - certonly
+      - ../cert_creation/acme-dns-auth.py:/opt/certbot/acme-dns-auth.py:ro
+    entrypoint:
+      - certbot
     
       
