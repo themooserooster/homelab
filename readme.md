@@ -1,5 +1,11 @@
 # My Homelab Setup
 
+## The Intent
+
+The idea here is to have a basic but secure homelab setup that can be accessed in the local home network without traversing the wider internet, but is available through an inexpensive thin proxy when away from home. The away-from-home edge node home should not use or rely on a VPN connection between clients and the edge node.
+
+The homelab itself should use as "vanilla" an open source tech stack as possible. To that end, it assumes Ubuntu LTS as the base host environment, Docker to contain all the applications with as little changes to the Ubuntu host environment as possible. Nginx will be used to host all the applications and Certbot from Let's Encrypt will create and maintain the HTTPS certs.
+
 ## Architecture
 
 This homelab setup has two main parts:
@@ -22,27 +28,39 @@ Run these commands from [local](local):
 
 1. Issue the initial cert (one-time) with DNS challenge.
 
-	docker compose run --rm --entrypoint certbot certbot certonly --manual --manual-auth-hook /opt/certbot/acme-dns-auth.py --preferred-challenges dns --manual-public-ip-logging-ok --non-interactive --agree-tos -m you@example.com -d mooserooster.com -d *.mooserooster.com
+  ```bash
+  docker compose run --rm --entrypoint certbot certbot certonly --manual --manual-auth-hook /opt/certbot/acme-dns-auth.py --preferred-challenges dns --manual-public-ip-logging-ok --non-interactive --agree-tos -m you@example.com -d mooserooster.com -d *.mooserooster.com
+  ```
 
-2. Verify the cert files exist on the host.
+1. Verify the cert files exist on the host.
 
-	ls /etc/letsencrypt/live/mooserooster.com/
+  ```bash
+  ls /etc/letsencrypt/live/mooserooster.com/
+  ```
 
-3. Start or restart Nginx so it reads the current cert.
+1. Start or restart Nginx so it reads the current cert.
 
-	docker compose up -d --force-recreate nginx
+  ```bash
+  docker compose up -d --force-recreate nginx
+  ```
 
-4. Configure unattended renewal from host scheduler (recommended secure option).
+1. Configure unattended renewal from host scheduler (recommended secure option).
 
-	../cert_creation/renew-and-reload.sh
+  ```bash
+  ../cert_creation/renew-and-reload.sh
+  ```
 
-5. Optional cron example (runs at 03:17 and 15:17 daily):
+1. Optional cron example (runs at 03:17 and 15:17 daily):
 
-	17 3,15 * * * /path/to/homelab/cert_creation/renew-and-reload.sh >> /var/log/certbot-renew.log 2>&1
+  ```bash
+  17 3,15 * * * /path/to/homelab/cert_creation/renew-and-reload.sh >> /var/log/certbot-renew.log 2>&1
+  ```
 
-6. Confirm renewal checks in logs.
+1. Confirm renewal checks in logs.
 
-	tail -n 100 /var/log/certbot-renew.log
+  ```bash
+  tail -n 100 /var/log/certbot-renew.log
+  ```
 
 Nginx currently expects:
 
