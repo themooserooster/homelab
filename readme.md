@@ -2,9 +2,15 @@
 
 ## The Intent
 
-The idea here is to have a basic but secure homelab setup that can be accessed in the local home network without traversing the wider internet, but is available through an inexpensive thin proxy when away from home. The away-from-home edge node home should not use or rely on a VPN connection between clients and the edge node.
+The idea here is to have a basic but secure homelab setup that can be accessed in the local home network without traversing the wider internet, but is available through an inexpensive thin proxy when away from home. 
 
 The homelab itself should use as "vanilla" an open source tech stack as possible. To that end, it assumes Ubuntu LTS as the base host environment, Docker to contain all the applications with as little changes to the Ubuntu host environment as possible. Nginx will be used to host all the applications and Certbot from Let's Encrypt will create and maintain the HTTPS certs.
+
+* Two nodes:
+  1. The "home" node located on premises in the house, which hosts all the applications in docker containers, creates and updates the HTTPS/SSL certs in a host level cron job, and serves local DNS on the home network so all home network traffic going to hosted applications doesn't have to leave the home network and consume edge node bandwidth. All hosted applications will be at 
+  2. The "edge" node, a lightweight VPS in a major cloud provider (DigitalOcean) that forwards network traffic to the "home" node for it to handle. The edge node should not use or rely on a VPN connection between clients and the edge node. The edge node leverages all the sec
+* A Wireguard VPN connecting the two nodes. The edge node should forward all legitimate traffic to the home node via the Wiregueard VPN connection.
+  * I don;t have an opinion on how the two nodes should establish the wiregueard
 
 ## Architecture
 
