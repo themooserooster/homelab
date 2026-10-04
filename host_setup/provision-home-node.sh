@@ -9,6 +9,10 @@ set -euo pipefail
 # Run as a user with sudo access:
 #   ./provision-home-node.sh
 #
+# The repo is expected at /opt/homelab (see readme "Provisioning the home
+# node"); the systemd timer runs the renewal script from wherever this
+# checkout lives, so other locations work too.
+#
 # Idempotent: safe to re-run; existing state is left alone.
 
 SCRIPT_DIR="$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)"

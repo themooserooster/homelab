@@ -92,6 +92,18 @@ local DNS records you add in the Pi-hole UI.
 
 ## Provisioning the home node
 
+Clone the repo to a neutral, system-level location rather than a user home
+directory — the cert renewal systemd timer runs
+[host_setup/renew-and-reload.sh](host_setup/renew-and-reload.sh) by absolute
+path as root, so the checkout shouldn't depend on a user account:
+
+```bash
+sudo mkdir -p /opt/homelab
+sudo chown "$USER:$USER" /opt/homelab
+git clone git@github.com:themooserooster/homelab.git /opt/homelab
+cd /opt/homelab
+```
+
 [host_setup/provision-home-node.sh](host_setup/provision-home-node.sh)
 prepares a fresh Ubuntu LTS host. It is idempotent — safe to re-run. Run it
 after copying `.env.example` to `local/.env` and setting `DOMAIN`:
@@ -105,6 +117,13 @@ the compose stack bind-mounts (`/etc/letsencrypt`, `/mnt/jellyfin/media/*`),
 adds your user to the `docker` group, and installs a systemd timer
 (`certbot-renew.timer`) that runs `host_setup/renew-and-reload.sh` twice
 daily for unattended cert renewal.
+
+Because `/opt` directories are world-readable by default, tighten permissions
+on the env file, which holds the Pi-hole password:
+
+```bash
+chmod 600 local/.env
+```
 
 ## TLS Cert Workflow (Docker)
 
@@ -137,7 +156,7 @@ Run these commands from [local](local):
    timer installed by the provisioning script:
 
   ```bash
-  17 3,15 * * * /path/to/homelab/host_setup/renew-and-reload.sh >> /var/log/certbot-renew.log 2>&1
+  17 3,15 * * * /opt/homelab/host_setup/renew-and-reload.sh >> /var/log/certbot-renew.log 2>&1
   ```
 
 1. Confirm renewal checks in logs.
