@@ -87,23 +87,23 @@ All site-specific values live in `local/.env` (copy from
 * `PIHOLE_PASSWORD` — Pi-hole web UI password.
 
 The only other place to update is the DNS CNAME for the acme-dns challenge
-(see [cert_creation/acme-dns-auth.py](cert_creation/acme-dns-auth.py)) and the
+(see [host_setup/acme-dns-auth.py](host_setup/acme-dns-auth.py)) and the
 local DNS records you add in the Pi-hole UI.
 
 ## Provisioning the home node
 
-[provisioning/provision-home-node.sh](provisioning/provision-home-node.sh)
+[host_setup/provision-home-node.sh](host_setup/provision-home-node.sh)
 prepares a fresh Ubuntu LTS host. It is idempotent — safe to re-run. Run it
 after copying `.env.example` to `local/.env` and setting `DOMAIN`:
 
 ```bash
-./provisioning/provision-home-node.sh
+./host_setup/provision-home-node.sh
 ```
 
 It installs Docker Engine and the compose plugin, creates the host directories
 the compose stack bind-mounts (`/etc/letsencrypt`, `/mnt/jellyfin/media/*`),
 adds your user to the `docker` group, and installs a systemd timer
-(`certbot-renew.timer`) that runs `cert_creation/renew-and-reload.sh` twice
+(`certbot-renew.timer`) that runs `host_setup/renew-and-reload.sh` twice
 daily for unattended cert renewal.
 
 ## TLS Cert Workflow (Docker)
@@ -118,26 +118,26 @@ Run these commands from [local](local):
    `local/.env`:
 
   ```bash
-  ../cert_creation/issue-initial-cert.sh you@example.com
+  ../host_setup/issue-initial-cert.sh you@example.com
   ```
 
   Or override the domain explicitly:
 
   ```bash
-  ../cert_creation/issue-initial-cert.sh you@example.com your-domain.com
+  ../host_setup/issue-initial-cert.sh you@example.com your-domain.com
   ```
 
 1. Configure unattended renewal from host scheduler (recommended secure option).
 
   ```bash
-  ../cert_creation/renew-and-reload.sh
+  ../host_setup/renew-and-reload.sh
   ```
 
 1. Optional cron example (runs at 03:17 and 15:17 daily) — or use the systemd
    timer installed by the provisioning script:
 
   ```bash
-  17 3,15 * * * /path/to/homelab/cert_creation/renew-and-reload.sh >> /var/log/certbot-renew.log 2>&1
+  17 3,15 * * * /path/to/homelab/host_setup/renew-and-reload.sh >> /var/log/certbot-renew.log 2>&1
   ```
 
 1. Confirm renewal checks in logs.

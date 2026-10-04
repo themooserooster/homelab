@@ -43,7 +43,7 @@ services:
       - /etc/letsencrypt:/etc/letsencrypt
       - /var/lib/letsencrypt:/var/lib/letsencrypt
       - /var/log/letsencrypt:/var/log/letsencrypt
-      - ../cert_creation/acme-dns-auth.py:/opt/certbot/acme-dns-auth.py:ro
+      - ../host_setup/acme-dns-auth.py:/opt/certbot/acme-dns-auth.py:ro
     entrypoint:
       - certbot
   pihole:

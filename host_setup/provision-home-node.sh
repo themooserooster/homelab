@@ -63,7 +63,7 @@ $SUDO chown -R "$USER:$USER" /mnt/jellyfin
 
 # ------------------------------------------------- Cert renewal timer -----
 log "Installing cert renewal systemd units"
-RENEW_SCRIPT="$SCRIPT_DIR/../cert_creation/renew-and-reload.sh"
+RENEW_SCRIPT="$SCRIPT_DIR/renew-and-reload.sh"
 
 $SUDO tee /etc/systemd/system/certbot-renew.service > /dev/null <<EOF
 [Unit]
@@ -97,5 +97,5 @@ $SUDO systemctl enable --now certbot-renew.timer
 log "Provisioning complete for domain: $DOMAIN"
 echo "  - Renewal timer: systemctl list-timers certbot-renew.timer"
 echo "  - Next: issue the initial cert (see readme 'TLS Cert Workflow'):"
-echo "      cd $LOCAL_DIR && ../cert_creation/issue-initial-cert.sh you@example.com"
+echo "      cd $LOCAL_DIR && ../host_setup/issue-initial-cert.sh you@example.com"
 echo "  - If you were added to the docker group, log out and back in first."
