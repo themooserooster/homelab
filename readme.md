@@ -169,3 +169,33 @@ Nginx currently expects (with `DOMAIN` set in `local/.env`):
 
 * Certificate: /etc/letsencrypt/live/$DOMAIN/fullchain.pem
 * Private key: /etc/letsencrypt/live/$DOMAIN/privkey.pem
+
+## Boot behavior
+
+No systemd unit is needed for the stack. Containers start automatically when
+the machine boots:
+
+* The Docker Engine packages installed by the provisioning script enable
+  `docker.service` by default on Ubuntu, so the daemon comes up at boot.
+* Every long-running service in [local/compose.yml](local/compose.yml)
+  (jellyfin, wireguard, nginx, pihole) uses `restart: unless-stopped`, so the
+  daemon restarts containers that were running before shutdown. No
+  `docker compose up` is required after a reboot.
+
+Notes:
+
+* `unless-stopped` means a service you manually `docker compose stop` stays
+  down across reboots.
+* Nginx crash-loops until the initial cert exists (its config references
+  `/etc/letsencrypt/live/$DOMAIN/`), which is why
+  [host_setup/issue-initial-cert.sh](host_setup/issue-initial-cert.sh) starts
+  nginx only after issuing the cert.
+* Certbot is gated behind `profiles: [manual]`, so it never auto-starts; it
+  runs one-shot via the scripts, driven by the host's `certbot-renew.timer`.
+
+Verify on a running node:
+
+```bash
+docker inspect -f '{{.Name}} {{.HostConfig.RestartPolicy.Name}}' $(docker ps -aq)
+systemctl is-enabled docker
+```
