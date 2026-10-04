@@ -12,7 +12,7 @@ services:
       - /mnt/jellyfin/media/movies:/mnt/movies
       - /mnt/jellyfin/media/tv:/mnt/tv
     environment:
-      - JELLYFIN_PublishedServerUrl=https://jellyfin.mooserooster.com
+      - JELLYFIN_PublishedServerUrl=https://jellyfin.${DOMAIN:?set DOMAIN in local/.env}
   wireguard:
     image: linuxserver/wireguard:latest
     container_name: wireguard
@@ -34,6 +34,8 @@ services:
     volumes:
       - /etc/letsencrypt:/etc/letsencrypt:ro
       - ./nginx/conf.d:/etc/nginx/conf.d:ro
+    environment:
+      - DOMAIN=${DOMAIN:?set DOMAIN in local/.env}
   certbot:
     image: certbot/certbot:latest
     container_name: certbot
@@ -46,5 +48,20 @@ services:
       - ../cert_creation/acme-dns-auth.py:/opt/certbot/acme-dns-auth.py:ro
     entrypoint:
       - certbot
+  pihole:
+    image: pihole/pihole:latest
+    container_name: pihole
+    restart: unless-stopped
+    ports:
+      - "192.168.1.166:53:53/tcp"
+      - "192.168.1.166:53:53/udp"
+      - "8083:80/tcp"
+    environment:
+      - TZ=America/Chicago
+      - FTLCONF_webserver_api_password=${PIHOLE_PASSWORD:?set PIHOLE_PASSWORD in local/.env}
+      - FTLCONF_dns_listeningMode=ALL
+      - FTLCONF_dns_upstreams=9.9.9.9
+    volumes:
+      - ./.pihole/etc-pihole:/etc/pihole
     
       
