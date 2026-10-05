@@ -101,5 +101,5 @@ $SUDO systemctl enable --now certbot-renew.timer
 log "Provisioning complete for domain: $DOMAIN"
 echo "  - Renewal timer: systemctl list-timers certbot-renew.timer"
 echo "  - Next: issue the initial cert (see readme 'TLS Cert Workflow'):"
-echo "      cd $LOCAL_DIR && ../host_setup/issue-initial-cert.sh you@example.com"
+echo "      cd $LOCAL_DIR && ../host_setup/issue-initial-cert.sh --email you@example.com"
 echo "  - If you were added to the docker group, log out and back in first."

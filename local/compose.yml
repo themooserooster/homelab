@@ -35,7 +35,7 @@ services:
     environment:
       - DOMAIN=${DOMAIN:?set DOMAIN in local/.env}
   certbot:
-    image: certbot/certbot:latest
+    image: certbot/dns-cloudflare:latest
     container_name: certbot
     profiles:
       - manual
@@ -43,7 +43,7 @@ services:
       - /etc/letsencrypt:/etc/letsencrypt
       - /var/lib/letsencrypt:/var/lib/letsencrypt
       - /var/log/letsencrypt:/var/log/letsencrypt
-      - ../host_setup/acme-dns-auth.py:/opt/certbot/acme-dns-auth.py:ro
+      - /etc/letsencrypt/cloudflare.ini:/etc/letsencrypt/cloudflare.ini:ro
     entrypoint:
       - certbot
   pihole:

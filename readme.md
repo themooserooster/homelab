@@ -86,9 +86,9 @@ All site-specific values live in `local/.env` (copy from
   running anything.
 * `PIHOLE_PASSWORD` — Pi-hole web UI password.
 
-The only other place to update is the DNS CNAME for the acme-dns challenge
-(see [host_setup/acme-dns-auth.py](host_setup/acme-dns-auth.py)) and the
-local DNS records you add in the Pi-hole UI.
+The only other place to update is the local DNS records you add in the
+Pi-hole UI. TLS certs are issued via the Cloudflare API (see "TLS Cert
+Workflow" below), so no manual DNS records are needed for cert issuance.
 
 ## Provisioning the home node
 
@@ -127,23 +127,44 @@ chmod 600 local/.env
 
 ## TLS Cert Workflow (Docker)
 
-Certbot is configured for one-shot runs from [local/compose.yml](local/compose.yml), and unattended renewal is driven by a host scheduler (cron or systemd timer). This avoids granting the Certbot container access to Docker socket.
+Certs are issued via DNS-01 challenge through the **Cloudflare API** — no
+manual DNS records, and renewals are fully unattended. Certbot is configured
+for one-shot runs from [local/compose.yml](local/compose.yml) (using the
+`certbot/dns-cloudflare` image), and unattended renewal is driven by a host
+scheduler (cron or systemd timer). This avoids granting the Certbot container
+access to Docker socket.
+
+### One-time Cloudflare setup
+
+1. In the Cloudflare dashboard (My Profile → API Tokens), create a token with
+   the **Zone → DNS → Edit** permission, scoped to the zone for `DOMAIN`.
+1. Store it on the home node in `/etc/letsencrypt/cloudflare.ini`:
+
+  ```bash
+  echo 'dns_cloudflare_api_token = <token>' | sudo tee /etc/letsencrypt/cloudflare.ini
+  sudo chmod 600 /etc/letsencrypt/cloudflare.ini
+  ```
+
+  The token can edit your DNS records but nothing else — keep the file
+  root-only.
+
+### Issuing and renewing
 
 Run these commands from [local](local):
 
 1. Issue the initial cert (one-time) with DNS challenge. This wraps the
-   Certbot run, verifies the cert files, and starts Nginx. The email argument
-   is required; the domain is optional and falls back to `DOMAIN` from
-   `local/.env`:
+   Certbot run, verifies the cert files, and starts Nginx. The email and
+   domain are accepted via flags and prompted for if omitted; the domain
+   prompt defaults to `DOMAIN` from `local/.env`:
 
   ```bash
-  ../host_setup/issue-initial-cert.sh you@example.com
+  ../host_setup/issue-initial-cert.sh --email you@example.com
   ```
 
-  Or override the domain explicitly:
+  Or pass both explicitly:
 
   ```bash
-  ../host_setup/issue-initial-cert.sh you@example.com your-domain.com
+  ../host_setup/issue-initial-cert.sh --email you@example.com --domain your-domain.com
   ```
 
 1. Configure unattended renewal from host scheduler (recommended secure option).
@@ -151,6 +172,10 @@ Run these commands from [local](local):
   ```bash
   ../host_setup/renew-and-reload.sh
   ```
+
+  Renewal is fully automatic — the Cloudflare plugin creates and removes the
+  TXT challenge records via the API, and Nginx is reloaded only when the cert
+  actually renewed.
 
 1. Optional cron example (runs at 03:17 and 15:17 daily) — or use the systemd
    timer installed by the provisioning script:
