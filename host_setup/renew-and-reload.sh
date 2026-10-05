@@ -16,7 +16,6 @@ docker compose run --rm certbot renew \
   --manual \
   --preferred-challenges dns \
   --manual-auth-hook /opt/certbot/acme-dns-auth.py \
-  --manual-public-ip-logging-ok \
   --non-interactive \
   --deploy-hook "sh -c 'touch /var/lib/letsencrypt/.cert_renewed'"
 

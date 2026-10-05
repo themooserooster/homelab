@@ -47,7 +47,6 @@ docker compose run --rm --entrypoint certbot certbot certonly \
   --manual \
   --manual-auth-hook /opt/certbot/acme-dns-auth.py \
   --preferred-challenges dns \
-  --manual-public-ip-logging-ok \
   --non-interactive \
   --agree-tos \
   -m "$EMAIL" \
