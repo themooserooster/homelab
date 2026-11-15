@@ -51,11 +51,11 @@ services:
     container_name: pihole
     restart: unless-stopped
     ports:
-      - "192.168.1.166:53:53/tcp"
-      - "192.168.1.166:53:53/udp"
+      - "${LAN_IP:?set LAN_IP in local/.env}:53:53/tcp"
+      - "${LAN_IP:?set LAN_IP in local/.env}:53:53/udp"
       - "8083:80/tcp"
     environment:
-      - TZ=America/Chicago
+      - TZ=${TZ:-America/Chicago}
       - FTLCONF_webserver_api_password=${PIHOLE_PASSWORD:?set PIHOLE_PASSWORD in local/.env}
       - FTLCONF_dns_listeningMode=ALL
       - FTLCONF_dns_upstreams=9.9.9.9

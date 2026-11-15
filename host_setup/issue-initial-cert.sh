@@ -2,7 +2,9 @@
 set -eu
 
 # Issue the initial wildcard cert via the Certbot container (DNS-01 challenge
-# through the Cloudflare API), then start Nginx so it picks the cert up.
+# through the Cloudflare API), then start Nginx so it picks the cert up, and
+# make sure unattended renewal is scheduled (installs the certbot-renew.timer
+# systemd units if not already active — see install-cert-renew-timer.sh).
 #
 # Requires /etc/letsencrypt/cloudflare.ini with a Cloudflare API token scoped
 # to Zone > DNS > Edit for the domain's zone (see readme "TLS Cert Workflow").
@@ -108,5 +110,13 @@ echo "Starting/recreating Nginx to read the new cert..."
 docker compose up -d --force-recreate nginx
 
 echo
-echo "Done. Configure unattended renewal with the host scheduler:"
-echo "  $SCRIPT_DIR/renew-and-reload.sh"
+echo "Ensuring unattended renewal is scheduled..."
+if systemctl is-enabled --quiet certbot-renew.timer 2>/dev/null \
+    && systemctl is-active --quiet certbot-renew.timer; then
+  echo "certbot-renew.timer already installed and active, skipping."
+else
+  "$SCRIPT_DIR/install-cert-renew-timer.sh"
+fi
+
+echo
+echo "Done."

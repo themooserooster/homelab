@@ -5,6 +5,7 @@ set -euo pipefail
 #   - Docker Engine + compose plugin
 #   - Host directories the compose stack bind-mounts
 #   - Unattended cert renewal via a systemd timer
+#     (see install-cert-renew-timer.sh)
 #
 # Run as a user with sudo access:
 #   ./provision-home-node.sh
@@ -13,14 +14,13 @@ set -euo pipefail
 # node"); the systemd timer runs the renewal script from wherever this
 # checkout lives, so other locations work too.
 #
-# Idempotent: safe to re-run; existing state is left alone.
+# Idempotent: safe to re-run; SSH and firewall policy is enforced on each run.
 
 SCRIPT_DIR="$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)"
 REPO_DIR="$(dirname "$SCRIPT_DIR")"
 LOCAL_DIR="$REPO_DIR/local"
 
-# DOMAIN comes from local/.env (cert paths depend on it). UID/GID in .env are
-# informational; UID is readonly in bash so only DOMAIN is extracted here.
+# DOMAIN comes from local/.env (cert paths depend on it).
 DOMAIN="$(grep -E '^DOMAIN=' "$LOCAL_DIR/.env" | tail -n1 | cut -d= -f2-)"
 : "${DOMAIN:?DOMAIN must be set in local/.env (copy .env.example if needed)}"
 
@@ -30,6 +30,73 @@ SUDO=""
 if [ "$(id -u)" -ne 0 ]; then
   SUDO="sudo"
 fi
+
+# -------------------------------------------------------- SSH and firewall
+log "Installing OpenSSH Server and UFW"
+$SUDO apt-get update
+$SUDO apt-get install -y openssh-server ufw
+$SUDO systemctl enable --now ssh
+
+if ! ROUTE="$(ip -4 route get 1.1.1.1 2>/dev/null)"; then
+  echo "Error: unable to determine the active LAN IPv4 route for SSH." >&2
+  exit 1
+fi
+LAN_IFACE="$(awk '{for (i = 1; i <= NF; i++) if ($i == "dev") {print $(i + 1); exit}}' <<< "$ROUTE")"
+LAN_SOURCE="$(awk '{for (i = 1; i <= NF; i++) if ($i == "src") {print $(i + 1); exit}}' <<< "$ROUTE")"
+if [ -z "$LAN_IFACE" ] || [ -z "$LAN_SOURCE" ]; then
+  echo "Error: unable to determine the active LAN interface and address for SSH." >&2
+  exit 1
+fi
+LAN_CIDR="$(ip -4 route show dev "$LAN_IFACE" proto kernel scope link |
+  awk -v source="$LAN_SOURCE" '
+    {
+      for (i = 1; i < NF; i++) {
+        if ($i == "src" && $(i + 1) == source) {
+          print $1
+          exit
+        }
+      }
+    }')"
+if [ -z "$LAN_CIDR" ]; then
+  echo "Error: unable to determine the connected LAN subnet for $LAN_IFACE ($LAN_SOURCE)." >&2
+  exit 1
+fi
+log "Restricting SSH access to $LAN_CIDR"
+$SUDO ufw allow from "$LAN_CIDR" to any port 22 proto tcp
+
+# Existing unrestricted SSH rules would override the LAN-only rule.
+remove_unrestricted_ssh_rules() {
+  local status number
+  local -a rules=()
+  local i
+
+  status="$($SUDO ufw status numbered)"
+  while IFS= read -r number; do
+    [ -n "$number" ] && rules+=("$number")
+  done < <(
+    awk '
+      /^\[[[:space:]]*[0-9]+\]/ && /ALLOW IN/ && /Anywhere/ {
+        number = $0
+        sub(/^\[[[:space:]]*/, "", number)
+        sub(/\].*/, "", number)
+        rule = $0
+        sub(/^\[[[:space:]]*[0-9]+\][[:space:]]*/, "", rule)
+        if (rule ~ /^OpenSSH([[:space:]]|$)/ || rule ~ /^22(\/tcp)?([[:space:]]|$)/) {
+          print number
+        }
+      }
+    ' <<< "$status"
+  )
+
+  for ((i = ${#rules[@]} - 1; i >= 0; i--)); do
+    $SUDO ufw --force delete "${rules[$i]}"
+  done
+}
+remove_unrestricted_ssh_rules
+
+$SUDO ufw default deny incoming
+$SUDO ufw default allow outgoing
+$SUDO ufw --force enable
 
 # ---------------------------------------------------------------- Docker ---
 log "Installing Docker Engine and compose plugin"
@@ -67,36 +134,7 @@ $SUDO chown -R "$USER:$USER" /mnt/jellyfin
 
 # ------------------------------------------------- Cert renewal timer -----
 log "Installing cert renewal systemd units"
-RENEW_SCRIPT="$SCRIPT_DIR/renew-and-reload.sh"
-
-$SUDO tee /etc/systemd/system/certbot-renew.service > /dev/null <<EOF
-[Unit]
-Description=Renew Let's Encrypt certs and reload nginx
-Wants=network-online.target
-After=network-online.target
-
-[Service]
-Type=oneshot
-ExecStart=$RENEW_SCRIPT
-EOF
-
-$SUDO tee /etc/systemd/system/certbot-renew.timer > /dev/null <<'EOF'
-[Unit]
-Description=Run cert renewal twice daily
-
-[Timer]
-# 03:17 and 15:17 local time, matching the readme's cron example.
-OnCalendar=*-*-* 03,15:17:00
-RandomizedDelaySec=300
-Persistent=true
-
-[Install]
-WantedBy=timers.target
-EOF
-
-$SUDO chmod +x "$RENEW_SCRIPT"
-$SUDO systemctl daemon-reload
-$SUDO systemctl enable --now certbot-renew.timer
+"$SCRIPT_DIR/install-cert-renew-timer.sh"
 
 log "Provisioning complete for domain: $DOMAIN"
 echo "  - Renewal timer: systemctl list-timers certbot-renew.timer"

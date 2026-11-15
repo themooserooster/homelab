@@ -115,8 +115,10 @@ after copying `.env.example` to `local/.env` and setting `DOMAIN`:
 It installs Docker Engine and the compose plugin, creates the host directories
 the compose stack bind-mounts (`/etc/letsencrypt`, `/mnt/jellyfin/media/*`),
 adds your user to the `docker` group, and installs a systemd timer
-(`certbot-renew.timer`) that runs `host_setup/renew-and-reload.sh` twice
-daily for unattended cert renewal.
+(`certbot-renew.timer`, via
+[host_setup/install-cert-renew-timer.sh](host_setup/install-cert-renew-timer.sh))
+that runs `host_setup/renew-and-reload.sh` twice daily for unattended cert
+renewal.
 
 Because `/opt` directories are world-readable by default, tighten permissions
 on the env file, which holds the Pi-hole password:
@@ -153,9 +155,11 @@ access to Docker socket.
 Run these commands from [local](local):
 
 1. Issue the initial cert (one-time) with DNS challenge. This wraps the
-   Certbot run, verifies the cert files, and starts Nginx. The email and
-   domain are accepted via flags and prompted for if omitted; the domain
-   prompt defaults to `DOMAIN` from `local/.env`:
+   Certbot run, verifies the cert files, starts Nginx, and makes sure
+   unattended renewal is scheduled (installs the `certbot-renew.timer`
+   systemd units if not already active). The email and domain are accepted
+   via flags and prompted for if omitted; the domain prompt defaults to
+   `DOMAIN` from `local/.env`:
 
   ```bash
   ../host_setup/issue-initial-cert.sh --email you@example.com
@@ -167,10 +171,13 @@ Run these commands from [local](local):
   ../host_setup/issue-initial-cert.sh --email you@example.com --domain your-domain.com
   ```
 
-1. Configure unattended renewal from host scheduler (recommended secure option).
+1. Unattended renewal is now scheduled — the `certbot-renew.timer` systemd
+   timer runs [host_setup/renew-and-reload.sh](host_setup/renew-and-reload.sh)
+   twice daily. It's installed by the provisioning script and (re-)checked by
+   the issue script; to install or refresh it manually, run:
 
   ```bash
-  ../host_setup/renew-and-reload.sh
+  ../host_setup/install-cert-renew-timer.sh
   ```
 
   Renewal is fully automatic — the Cloudflare plugin creates and removes the
@@ -178,7 +185,8 @@ Run these commands from [local](local):
   actually renewed.
 
 1. Optional cron example (runs at 03:17 and 15:17 daily) — or use the systemd
-   timer installed by the provisioning script:
+   timer installed by [host_setup/install-cert-renew-timer.sh](host_setup/install-cert-renew-timer.sh)
+   (called by the provisioning and cert-issue scripts):
 
   ```bash
   17 3,15 * * * /opt/homelab/host_setup/renew-and-reload.sh >> /var/log/certbot-renew.log 2>&1
