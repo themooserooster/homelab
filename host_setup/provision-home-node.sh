@@ -6,6 +6,7 @@ set -euo pipefail
 #   - Host directories the compose stack bind-mounts
 #   - Unattended cert renewal via a systemd timer
 #     (see install-cert-renew-timer.sh)
+#   - SSH, LAN-scoped firewall access, lid-close behavior, and automatic updates
 #
 # Run as a user with sudo access:
 #   ./provision-home-node.sh
@@ -14,7 +15,7 @@ set -euo pipefail
 # node"); the systemd timer runs the renewal script from wherever this
 # checkout lives, so other locations work too.
 #
-# Idempotent: safe to re-run; SSH and firewall policy is enforced on each run.
+# Idempotent: safe to re-run; SSH, firewall, lid, and update policies are enforced.
 
 SCRIPT_DIR="$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)"
 REPO_DIR="$(dirname "$SCRIPT_DIR")"
@@ -32,9 +33,9 @@ if [ "$(id -u)" -ne 0 ]; then
 fi
 
 # -------------------------------------------------------- SSH and firewall
-log "Installing OpenSSH Server and UFW"
+log "Installing OpenSSH Server, UFW, and unattended-upgrades"
 $SUDO apt-get update
-$SUDO apt-get install -y openssh-server ufw
+$SUDO apt-get install -y openssh-server ufw unattended-upgrades
 $SUDO systemctl enable --now ssh
 
 if ! ROUTE="$(ip -4 route get 1.1.1.1 2>/dev/null)"; then
@@ -98,6 +99,14 @@ $SUDO ufw default deny incoming
 $SUDO ufw default allow outgoing
 $SUDO ufw --force enable
 
+# --------------------------------------------------- Automatic updates ----
+log "Enabling daily unattended upgrades"
+$SUDO tee /etc/apt/apt.conf.d/52-homelab-auto-upgrades > /dev/null <<'EOF'
+APT::Periodic::Update-Package-Lists "1";
+APT::Periodic::Unattended-Upgrade "1";
+EOF
+$SUDO systemctl enable --now apt-daily.timer apt-daily-upgrade.timer
+
 # ---------------------------------------------------------------- Docker ---
 log "Installing Docker Engine and compose plugin"
 if command -v docker >/dev/null 2>&1 && docker compose version >/dev/null 2>&1; then
@@ -135,6 +144,17 @@ $SUDO chown -R "$USER:$USER" /mnt/jellyfin
 # ------------------------------------------------- Cert renewal timer -----
 log "Installing cert renewal systemd units"
 "$SCRIPT_DIR/install-cert-renew-timer.sh"
+
+# ------------------------------------------------------- Lid-close behavior
+log "Configuring lid-close behavior (restarting logind may interrupt active sessions)"
+$SUDO install -d -m 0755 /etc/systemd/logind.conf.d
+$SUDO tee /etc/systemd/logind.conf.d/90-homelab-lid.conf > /dev/null <<'EOF'
+[Login]
+HandleLidSwitch=ignore
+HandleLidSwitchExternalPower=ignore
+HandleLidSwitchDocked=ignore
+EOF
+$SUDO systemctl restart systemd-logind
 
 log "Provisioning complete for domain: $DOMAIN"
 echo "  - Renewal timer: systemctl list-timers certbot-renew.timer"
