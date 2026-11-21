@@ -34,8 +34,9 @@ traffic to hosted apps resolves to the home node and never leaves the LAN. It
 also filters ads and trackers, forwarding unblocked queries to Quad9 (9.9.9.9).
 
 * DNS: `53/tcp` and `53/udp` on the home node
-* Web UI: `http://<home-node-ip>:8083/admin` (nginx keeps 80/443, so Pi-hole's
-  UI is on an alternate port)
+* Web UI: `https://dns.$DOMAIN/admin` from LAN clients using Pi-hole for DNS
+  (after the wildcard certificate is issued and Nginx is running)
+* Last-resort local access on the home node: `http://127.0.0.1:8083/admin`
 * Data: persisted in `local/.pihole/etc-pihole/` (gitignored)
 * Config: `local/.env` (gitignored; copy from `local/.env.example`)
 
@@ -57,15 +58,24 @@ also filters ads and trackers, forwarding unblocked queries to Quad9 (9.9.9.9).
   docker compose up -d pihole
   ```
 
-1. Log in to the web UI and add local DNS records so hosted apps resolve to the
-   home node on the LAN (Web UI → Local DNS → Records), e.g.:
+1. Compose configures local DNS records for the hosted apps:
 
   ```text
-  jellyfin.$DOMAIN  ->  <home-node-ip>
+  dns.$DOMAIN       ->  LAN_IP
+  jellyfin.$DOMAIN  ->  LAN_IP
   ```
 
-1. Point your router's DHCP DNS at the home node IP so all LAN clients use
-   Pi-hole. Clients will pick it up on their next DHCP lease renewal.
+  Add future app records to `FTLCONF_dns_hosts` in `local/compose.yml`. Because
+  this setting is managed by Compose, it is read-only in the Pi-hole UI; remove
+  any duplicate records previously added through Local DNS → Records.
+
+  On an existing node, apply the Compose changes with
+  `docker compose up -d pihole nginx` from `local/` after the certificate is
+  available.
+
+1. Point your router's DHCP DNS at the home node IP so LAN clients use Pi-hole
+   and can resolve `dns.$DOMAIN` to the home node. Clients will pick it up on
+   their next DHCP lease renewal.
 
 ### Upstream and listening mode
 
@@ -74,6 +84,8 @@ also filters ads and trackers, forwarding unblocked queries to Quad9 (9.9.9.9).
 * `FTLCONF_dns_listeningMode=ALL` is required because the container runs on
   Docker's default bridge network.
 * The timezone is set via `TZ=America/Chicago`.
+* Nginx serves the Pi-hole UI over HTTPS using the existing wildcard
+  certificate; its direct HTTP fallback is bound to the homelab host only.
 
 ## Customizing for your own homelab
 
@@ -118,7 +130,8 @@ adds your user to the `docker` group, and installs a systemd timer
 (`certbot-renew.timer`, via
 [host_setup/install-cert-renew-timer.sh](host_setup/install-cert-renew-timer.sh))
 that runs `host_setup/renew-and-reload.sh` twice daily for unattended cert
-renewal.
+renewal. It also installs `homelab-compose-update.timer`, which checks for and
+applies container image updates every Sunday at 04:00 local time.
 
 Because `/opt` directories are world-readable by default, tighten permissions
 on the env file, which holds the Pi-hole password:
@@ -231,4 +244,28 @@ Verify on a running node:
 ```bash
 docker inspect -f '{{.Name}} {{.HostConfig.RestartPolicy.Name}}' $(docker ps -aq)
 systemctl is-enabled docker
+```
+
+## Automatic container updates
+
+`homelab-compose-update.timer` runs
+[host_setup/update-compose-images.sh](host_setup/update-compose-images.sh)
+weekly on Sunday at 04:00 local time (with up to a five-minute randomized
+delay). It pulls images for all Compose services, including the manual-only
+Certbot image, then redeploys the default-profile services without starting
+Certbot.
+An updated image can briefly interrupt the affected service; automatic
+rollback is not configured.
+
+Check the next run and review the last run's logs with:
+
+```bash
+systemctl list-timers homelab-compose-update.timer
+sudo journalctl -u homelab-compose-update.service
+```
+
+Run an update immediately with:
+
+```bash
+sudo systemctl start homelab-compose-update.service
 ```

@@ -6,7 +6,8 @@ set -euo pipefail
 #   - Host directories the compose stack bind-mounts
 #   - Unattended cert renewal via a systemd timer
 #     (see install-cert-renew-timer.sh)
-#   - SSH, LAN-scoped firewall access, lid-close behavior, and automatic updates
+#   - SSH, LAN-scoped firewall access, lid-close behavior, and automatic
+#     OS/container updates
 #
 # Run as a user with sudo access:
 #   ./provision-home-node.sh
@@ -144,6 +145,10 @@ $SUDO chown -R "$USER:$USER" /mnt/jellyfin
 # ------------------------------------------------- Cert renewal timer -----
 log "Installing cert renewal systemd units"
 "$SCRIPT_DIR/install-cert-renew-timer.sh"
+
+# ------------------------------------------------ Compose update timer -----
+log "Installing weekly Compose image update timer"
+"$SCRIPT_DIR/install-compose-update-timer.sh"
 
 # ------------------------------------------------------- Lid-close behavior
 log "Configuring lid-close behavior (restarting logind may interrupt active sessions)"
