@@ -2,7 +2,7 @@
 set -eu
 
 # Install (or refresh) the weekly systemd timer that updates the Compose stack.
-# Called by provision-home-node.sh; can also be run standalone. Needs root —
+# Called by ../provision.sh; can also be run standalone. Needs root —
 # uses sudo when invoked as a non-root user.
 
 SCRIPT_DIR="$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)"

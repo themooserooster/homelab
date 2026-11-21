@@ -2,8 +2,7 @@
 set -euo pipefail
 
 SCRIPT_DIR="$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)"
-REPO_DIR="$(dirname "$SCRIPT_DIR")"
-LOCAL_DIR="$REPO_DIR/local"
+LOCAL_DIR="$(dirname "$SCRIPT_DIR")"
 
 if [ ! -f "$LOCAL_DIR/compose.yml" ]; then
   echo "ERROR: Compose file not found at $LOCAL_DIR/compose.yml." >&2

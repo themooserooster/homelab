@@ -7,8 +7,7 @@ set -eu
 #
 # Run from anywhere; this resolves repo paths relative to this script.
 SCRIPT_DIR="$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)"
-REPO_DIR="$(dirname "$SCRIPT_DIR")"
-LOCAL_DIR="$REPO_DIR/local"
+LOCAL_DIR="$(dirname "$SCRIPT_DIR")"
 FLAG_FILE="/var/lib/letsencrypt/.cert_renewed"
 
 cd "$LOCAL_DIR"

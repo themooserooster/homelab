@@ -44,8 +44,7 @@ while [ $# -gt 0 ]; do
 done
 
 SCRIPT_DIR="$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)"
-REPO_DIR="$(dirname "$SCRIPT_DIR")"
-LOCAL_DIR="$REPO_DIR/local"
+LOCAL_DIR="$(dirname "$SCRIPT_DIR")"
 ENV_FILE="$LOCAL_DIR/.env"
 
 if [ -z "$DOMAIN" ]; then

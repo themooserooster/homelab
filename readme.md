@@ -106,7 +106,7 @@ Workflow" below), so no manual DNS records are needed for cert issuance.
 
 Clone the repo to a neutral, system-level location rather than a user home
 directory — the cert renewal systemd timer runs
-[host_setup/renew-and-reload.sh](host_setup/renew-and-reload.sh) by absolute
+[local/scripts/renew-and-reload.sh](local/scripts/renew-and-reload.sh) by absolute
 path as root, so the checkout shouldn't depend on a user account:
 
 ```bash
@@ -116,22 +116,29 @@ git clone git@github.com:themooserooster/homelab.git /opt/homelab
 cd /opt/homelab
 ```
 
-[host_setup/provision-home-node.sh](host_setup/provision-home-node.sh)
+[local/provision.sh](local/provision.sh)
 prepares a fresh Ubuntu LTS host. It is idempotent — safe to re-run. Run it
-after copying `.env.example` to `local/.env` and setting `DOMAIN`:
+as root after copying `.env.example` to `local/.env` and setting `DOMAIN`:
 
 ```bash
-./host_setup/provision-home-node.sh
+cd local
+sudo ./provision.sh
 ```
 
 It installs Docker Engine and the compose plugin, creates the host directories
 the compose stack bind-mounts (`/etc/letsencrypt`, `/mnt/jellyfin/media/*`),
-adds your user to the `docker` group, and installs a systemd timer
+adds your user to the `docker` group, installs a systemd timer
 (`certbot-renew.timer`, via
-[host_setup/install-cert-renew-timer.sh](host_setup/install-cert-renew-timer.sh))
-that runs `host_setup/renew-and-reload.sh` twice daily for unattended cert
-renewal. It also installs `homelab-compose-update.timer`, which checks for and
+[local/scripts/install-cert-renew-timer.sh](local/scripts/install-cert-renew-timer.sh))
+that runs `local/scripts/renew-and-reload.sh` twice daily for unattended cert
+renewal, and installs `homelab-compose-update.timer`, which checks for and
 applies container image updates every Sunday at 04:00 local time.
+
+It then issues the initial TLS cert (see "TLS Cert Workflow" below): if
+`/etc/letsencrypt/cloudflare.ini` doesn't exist yet, it prompts for a
+Cloudflare API token (input hidden, file written root-only) and runs
+[local/scripts/issue-initial-cert.sh](local/scripts/issue-initial-cert.sh).
+Leave the prompt blank to skip issuance and do it later.
 
 Because `/opt` directories are world-readable by default, tighten permissions
 on the env file, which holds the Pi-hole password:
@@ -165,7 +172,10 @@ access to Docker socket.
 
 ### Issuing and renewing
 
-Run these commands from [local](local):
+Provisioning issues the initial cert automatically (it prompts for the
+Cloudflare token above if `/etc/letsencrypt/cloudflare.ini` is missing). Run
+these commands from [local](local) only if you skipped issuance during
+provisioning or need to re-issue:
 
 1. Issue the initial cert (one-time) with DNS challenge. This wraps the
    Certbot run, verifies the cert files, starts Nginx, and makes sure
@@ -175,22 +185,22 @@ Run these commands from [local](local):
    `DOMAIN` from `local/.env`:
 
   ```bash
-  ../host_setup/issue-initial-cert.sh --email you@example.com
+  scripts/issue-initial-cert.sh --email you@example.com
   ```
 
   Or pass both explicitly:
 
   ```bash
-  ../host_setup/issue-initial-cert.sh --email you@example.com --domain your-domain.com
+  scripts/issue-initial-cert.sh --email you@example.com --domain your-domain.com
   ```
 
 1. Unattended renewal is now scheduled — the `certbot-renew.timer` systemd
-   timer runs [host_setup/renew-and-reload.sh](host_setup/renew-and-reload.sh)
+   timer runs [local/scripts/renew-and-reload.sh](local/scripts/renew-and-reload.sh)
    twice daily. It's installed by the provisioning script and (re-)checked by
    the issue script; to install or refresh it manually, run:
 
   ```bash
-  ../host_setup/install-cert-renew-timer.sh
+  scripts/install-cert-renew-timer.sh
   ```
 
   Renewal is fully automatic — the Cloudflare plugin creates and removes the
@@ -198,11 +208,11 @@ Run these commands from [local](local):
   actually renewed.
 
 1. Optional cron example (runs at 03:17 and 15:17 daily) — or use the systemd
-   timer installed by [host_setup/install-cert-renew-timer.sh](host_setup/install-cert-renew-timer.sh)
+   timer installed by [local/scripts/install-cert-renew-timer.sh](local/scripts/install-cert-renew-timer.sh)
    (called by the provisioning and cert-issue scripts):
 
   ```bash
-  17 3,15 * * * /opt/homelab/host_setup/renew-and-reload.sh >> /var/log/certbot-renew.log 2>&1
+  17 3,15 * * * /opt/homelab/local/scripts/renew-and-reload.sh >> /var/log/certbot-renew.log 2>&1
   ```
 
 1. Confirm renewal checks in logs.
@@ -234,7 +244,7 @@ Notes:
   down across reboots.
 * Nginx crash-loops until the initial cert exists (its config references
   `/etc/letsencrypt/live/$DOMAIN/`), which is why
-  [host_setup/issue-initial-cert.sh](host_setup/issue-initial-cert.sh) starts
+  [local/scripts/issue-initial-cert.sh](local/scripts/issue-initial-cert.sh) starts
   nginx only after issuing the cert.
 * Certbot is gated behind `profiles: [manual]`, so it never auto-starts; it
   runs one-shot via the scripts, driven by the host's `certbot-renew.timer`.
@@ -249,7 +259,7 @@ systemctl is-enabled docker
 ## Automatic container updates
 
 `homelab-compose-update.timer` runs
-[host_setup/update-compose-images.sh](host_setup/update-compose-images.sh)
+[local/scripts/update-compose-images.sh](local/scripts/update-compose-images.sh)
 weekly on Sunday at 04:00 local time (with up to a five-minute randomized
 delay). It pulls images for all Compose services, including the manual-only
 Certbot image, then redeploys the default-profile services without starting

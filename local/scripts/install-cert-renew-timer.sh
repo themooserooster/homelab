@@ -6,7 +6,7 @@ set -eu
 # timer. Idempotent: safe to re-run; unit files are rewritten and the timer
 # re-enabled.
 #
-# Called by provision-home-node.sh and issue-initial-cert.sh; can also be run
+# Called by ../provision.sh and issue-initial-cert.sh; can also be run
 # standalone. Needs root — uses sudo when invoked as a non-root user.
 
 SCRIPT_DIR="$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)"
