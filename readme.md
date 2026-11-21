@@ -33,49 +33,24 @@ Pi-hole runs on the home node and serves DNS for the whole home network, so
 traffic to hosted apps resolves to the home node and never leaves the LAN. It
 also filters ads and trackers, forwarding unblocked queries to Quad9 (9.9.9.9).
 
-* DNS: `53/tcp` and `53/udp` on the home node
+* DNS: `53/tcp` and `53/udp` on the home node, bound to `LAN_IP`
 * Web UI: `https://dns.$DOMAIN/admin` from LAN clients using Pi-hole for DNS
   (after the wildcard certificate is issued and Nginx is running)
 * Last-resort local access on the home node: `http://127.0.0.1:8083/admin`
 * Data: persisted in `local/.pihole/etc-pihole/` (gitignored)
-* Config: `local/.env` (gitignored; copy from `local/.env.example`)
+* Config: `local/.env` (gitignored; created by provision.sh from
+  [local/.env.example](local/.env.example))
 
-### First-time setup
+Compose configures local DNS records for the hosted apps:
 
-1. Create your env file from the example and set the web UI password:
+```text
+dns.$DOMAIN       ->  LAN_IP
+jellyfin.$DOMAIN  ->  LAN_IP
+```
 
-  ```bash
-  cd local
-  cp .env.example .env
-  # then edit .env and set PIHOLE_PASSWORD to a real password
-  ```
-
-  `.env` is gitignored and must never be committed.
-
-1. Start the container from [local](local):
-
-  ```bash
-  docker compose up -d pihole
-  ```
-
-1. Compose configures local DNS records for the hosted apps:
-
-  ```text
-  dns.$DOMAIN       ->  LAN_IP
-  jellyfin.$DOMAIN  ->  LAN_IP
-  ```
-
-  Add future app records to `FTLCONF_dns_hosts` in `local/compose.yml`. Because
-  this setting is managed by Compose, it is read-only in the Pi-hole UI; remove
-  any duplicate records previously added through Local DNS → Records.
-
-  On an existing node, apply the Compose changes with
-  `docker compose up -d pihole nginx` from `local/` after the certificate is
-  available.
-
-1. Point your router's DHCP DNS at the home node IP so LAN clients use Pi-hole
-   and can resolve `dns.$DOMAIN` to the home node. Clients will pick it up on
-   their next DHCP lease renewal.
+Add future app records to `FTLCONF_dns_hosts` in [local/compose.yml](local/compose.yml).
+Because this setting is managed by Compose, it is read-only in the Pi-hole UI;
+remove any duplicate records previously added through Local DNS → Records.
 
 ### Upstream and listening mode
 
@@ -83,19 +58,22 @@ also filters ads and trackers, forwarding unblocked queries to Quad9 (9.9.9.9).
   [local/compose.yml](local/compose.yml).
 * `FTLCONF_dns_listeningMode=ALL` is required because the container runs on
   Docker's default bridge network.
-* The timezone is set via `TZ=America/Chicago`.
+* The timezone is set via `TZ` in `local/.env`.
 * Nginx serves the Pi-hole UI over HTTPS using the existing wildcard
   certificate; its direct HTTP fallback is bound to the homelab host only.
 
 ## Customizing for your own homelab
 
-All site-specific values live in `local/.env` (copy from
-[local/.env.example](local/.env.example)):
+All site-specific values live in `local/.env`, which provision.sh creates on
+first run by prompting for each value (see "Provisioning the home node"
+below):
 
 * `DOMAIN` — your base domain. Nginx server names and cert paths
-  ([local/nginx/conf.d/jellyfin.conf](local/nginx/conf.d/jellyfin.conf)),
-  Jellyfin's published URL, and the TLS scripts all read it. Set this before
-  running anything.
+  ([local/nginx/templates/jellyfin.conf.template](local/nginx/templates/jellyfin.conf.template)),
+  Jellyfin's published URL, and the TLS scripts all read it.
+* `LAN_IP` — the home node's static IP on the LAN. Pi-hole's DNS listener
+  (port 53) binds to it.
+* `TZ` — timezone for containers that honor it (Pi-hole).
 * `PIHOLE_PASSWORD` — Pi-hole web UI password.
 
 The only other place to update is the local DNS records you add in the
@@ -113,54 +91,59 @@ path as root, so the checkout shouldn't depend on a user account:
 sudo mkdir -p /opt/homelab
 sudo chown "$USER:$USER" /opt/homelab
 git clone git@github.com:themooserooster/homelab.git /opt/homelab
-cd /opt/homelab
+cd /opt/homelab/local
 ```
 
-[local/provision.sh](local/provision.sh)
-prepares a fresh Ubuntu LTS host. It is idempotent — safe to re-run. Run it
-as root after copying `.env.example` to `local/.env` and setting `DOMAIN`:
+[local/provision.sh](local/provision.sh) is the only command you need to run.
+It is idempotent — safe to re-run:
 
 ```bash
-cd local
 sudo ./provision.sh
 ```
 
-It installs Docker Engine and the compose plugin, creates the host directories
-the compose stack bind-mounts (`/etc/letsencrypt`, `/mnt/jellyfin/media/*`),
-adds your user to the `docker` group, installs a systemd timer
-(`certbot-renew.timer`, via
-[local/scripts/install-cert-renew-timer.sh](local/scripts/install-cert-renew-timer.sh))
-that runs `local/scripts/renew-and-reload.sh` twice daily for unattended cert
-renewal, and installs `homelab-compose-update.timer`, which checks for and
-applies container image updates every Sunday at 04:00 local time.
+On first run it prompts for the `local/.env` values listed under
+"Customizing for your own homelab" (the file is written `600` and owned by
+your user, so it's safe even though `/opt` directories are world-readable by
+default), then:
 
-It then issues the initial TLS cert (see "TLS Cert Workflow" below): if
-`/etc/letsencrypt/cloudflare.ini` doesn't exist yet, it prompts for a
-Cloudflare API token (input hidden, file written root-only) and runs
-[local/scripts/issue-initial-cert.sh](local/scripts/issue-initial-cert.sh).
-Leave the prompt blank to skip issuance and do it later.
+1. Installs OpenSSH Server, UFW, and unattended-upgrades, and restricts SSH
+   access to the connected LAN subnet.
+1. Installs Docker Engine and the compose plugin and adds your user to the
+   `docker` group (takes effect on next login).
+1. Creates the host directories the compose stack bind-mounts
+   (`/etc/letsencrypt`, `/mnt/jellyfin/media/*`).
+1. Installs `certbot-renew.timer` (via
+   [local/scripts/install-cert-renew-timer.sh](local/scripts/install-cert-renew-timer.sh)),
+   which runs `local/scripts/renew-and-reload.sh` twice daily for unattended
+   cert renewal, and `homelab-compose-update.timer`, which applies container
+   image updates every Sunday at 04:00 local time.
+1. Issues the initial TLS cert (see "TLS Cert Workflow" below): if
+   `/etc/letsencrypt/cloudflare.ini` doesn't exist yet, it prompts for a
+   Cloudflare API token (input hidden, file written root-only) and runs
+   [local/scripts/issue-initial-cert.sh](local/scripts/issue-initial-cert.sh).
+   Leave the prompt blank to skip issuance and do it later.
+1. Starts the Compose stack (`docker compose up -d`).
 
-Because `/opt` directories are world-readable by default, tighten permissions
-on the env file, which holds the Pi-hole password:
-
-```bash
-chmod 600 local/.env
-```
+After provisioning, the one remaining manual step is pointing your router's
+DHCP DNS at the home node's `LAN_IP` so LAN clients use Pi-hole (see "Local
+DNS (Pi-hole)" above).
 
 ## TLS Cert Workflow (Docker)
 
 Certs are issued via DNS-01 challenge through the **Cloudflare API** — no
 manual DNS records, and renewals are fully unattended. Certbot is configured
 for one-shot runs from [local/compose.yml](local/compose.yml) (using the
-`certbot/dns-cloudflare` image), and unattended renewal is driven by a host
-scheduler (cron or systemd timer). This avoids granting the Certbot container
-access to Docker socket.
+`certbot/dns-cloudflare` image), and unattended renewal is driven by the
+host's `certbot-renew.timer`. This avoids granting the Certbot container
+access to the Docker socket.
 
 ### One-time Cloudflare setup
 
 1. In the Cloudflare dashboard (My Profile → API Tokens), create a token with
    the **Zone → DNS → Edit** permission, scoped to the zone for `DOMAIN`.
-1. Store it on the home node in `/etc/letsencrypt/cloudflare.ini`:
+1. That's it — provision.sh prompts for the token during provisioning and
+   stores it in `/etc/letsencrypt/cloudflare.ini` (root-only). If you skipped
+   the prompt, store it manually:
 
   ```bash
   echo 'dns_cloudflare_api_token = <token>' | sudo tee /etc/letsencrypt/cloudflare.ini
@@ -172,10 +155,9 @@ access to Docker socket.
 
 ### Issuing and renewing
 
-Provisioning issues the initial cert automatically (it prompts for the
-Cloudflare token above if `/etc/letsencrypt/cloudflare.ini` is missing). Run
-these commands from [local](local) only if you skipped issuance during
-provisioning or need to re-issue:
+Provisioning issues the initial cert automatically. Run these commands from
+[local](local) only if you skipped issuance during provisioning or need to
+re-issue:
 
 1. Issue the initial cert (one-time) with DNS challenge. This wraps the
    Certbot run, verifies the cert files, starts Nginx, and makes sure
@@ -194,8 +176,8 @@ provisioning or need to re-issue:
   scripts/issue-initial-cert.sh --email you@example.com --domain your-domain.com
   ```
 
-1. Unattended renewal is now scheduled — the `certbot-renew.timer` systemd
-   timer runs [local/scripts/renew-and-reload.sh](local/scripts/renew-and-reload.sh)
+1. Unattended renewal is scheduled by `certbot-renew.timer`, which runs
+   [local/scripts/renew-and-reload.sh](local/scripts/renew-and-reload.sh)
    twice daily. It's installed by the provisioning script and (re-)checked by
    the issue script; to install or refresh it manually, run:
 

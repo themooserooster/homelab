@@ -2,11 +2,13 @@
 set -euo pipefail
 
 # Provision an Ubuntu LTS host for the home node:
+#   - local/.env from .env.example (prompts for each value on first run)
 #   - Docker Engine + compose plugin
 #   - Host directories the compose stack bind-mounts
 #   - Unattended cert renewal via a systemd timer
 #     (see scripts/install-cert-renew-timer.sh)
 #   - Initial TLS cert issuance (see scripts/issue-initial-cert.sh)
+#   - Starts the Compose stack
 #   - SSH, LAN-scoped firewall access, lid-close behavior, and automatic
 #     OS/container updates
 #
@@ -21,10 +23,7 @@ set -euo pipefail
 
 SCRIPT_DIR="$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)"
 LOCAL_DIR="$SCRIPT_DIR"
-
-# DOMAIN comes from local/.env (cert paths depend on it).
-DOMAIN="$(grep -E '^DOMAIN=' "$LOCAL_DIR/.env" | tail -n1 | cut -d= -f2-)"
-: "${DOMAIN:?DOMAIN must be set in local/.env (copy .env.example if needed)}"
+ENV_FILE="$LOCAL_DIR/.env"
 
 log() { printf '\n==> %s\n' "$*"; }
 
@@ -35,6 +34,67 @@ fi
 
 # $USER is "root" under sudo; these refer to the invoking user.
 INVOKING_USER="${SUDO_USER:-$USER}"
+
+# ------------------------------------------------------------- local/.env --
+# First run: create .env from .env.example, prompting for each value.
+if [ ! -f "$ENV_FILE" ]; then
+  [ -f "$LOCAL_DIR/.env.example" ] ||
+    { echo "ERROR: $LOCAL_DIR/.env.example not found." >&2; exit 1; }
+
+  log "Creating $ENV_FILE from .env.example"
+  echo "Press Enter to accept the [default]."
+
+  while :; do
+    read -r -p "Base domain, e.g. home.example.com: " DOMAIN \
+      || { echo; echo "ERROR: input closed." >&2; exit 1; }
+    [ -n "$DOMAIN" ] && break
+    echo "  DOMAIN is required (nginx server names and cert paths use it)."
+  done
+
+  read -r -p "Home node's static LAN IP [192.168.1.166]: " LAN_IP || LAN_IP=""
+  LAN_IP="${LAN_IP:-192.168.1.166}"
+
+  read -r -p "Timezone [America/Chicago]: " TZ || TZ=""
+  TZ="${TZ:-America/Chicago}"
+
+  while :; do
+    read -rs -p "Pi-hole web UI password (input hidden): " PIHOLE_PASSWORD \
+      || { echo; echo "ERROR: input closed." >&2; exit 1; }
+    echo
+    [ -n "$PIHOLE_PASSWORD" ] && break
+    echo "  A password is required (the example default is insecure)."
+  done
+
+  # Values go through the environment (not awk -v) so backslashes in them
+  # survive; umask keeps the file private from the moment it's created.
+  ( umask 077
+    DOMAIN="$DOMAIN" LAN_IP="$LAN_IP" TZ="$TZ" PIHOLE_PASSWORD="$PIHOLE_PASSWORD" \
+    awk '
+      BEGIN { split("DOMAIN LAN_IP TZ PIHOLE_PASSWORD", keys, " ") }
+      {
+        for (i = 1; i <= 4; i++)
+          if (index($0, keys[i] "=") == 1) { print keys[i] "=" ENVIRON[keys[i]]; next }
+        print
+      }
+    ' "$LOCAL_DIR/.env.example" > "$ENV_FILE"
+  )
+  chown "$INVOKING_USER:$INVOKING_USER" "$ENV_FILE"
+  chmod 600 "$ENV_FILE"
+
+  # Fail loudly if .env.example and the prompt list ever drift apart.
+  for key in DOMAIN LAN_IP TZ PIHOLE_PASSWORD; do
+    if ! grep -q "^$key=" "$ENV_FILE"; then
+      echo "ERROR: $key missing from $ENV_FILE; update the prompt list in $0." >&2
+      exit 1
+    fi
+  done
+  echo "Wrote $ENV_FILE."
+fi
+
+# DOMAIN comes from local/.env (cert paths depend on it).
+DOMAIN="$(grep -E '^DOMAIN=' "$ENV_FILE" | tail -n1 | cut -d= -f2-)"
+: "${DOMAIN:?DOMAIN must be set in local/.env (delete it to redo the setup prompts)}"
+LAN_IP="$(grep -E '^LAN_IP=' "$ENV_FILE" | tail -n1 | cut -d= -f2-)"
 
 # -------------------------------------------------------- SSH and firewall
 log "Installing OpenSSH Server, UFW, and unattended-upgrades"
@@ -181,6 +241,10 @@ else
   fi
 fi
 
+# --------------------------------------------------------- Start the stack --
+log "Starting the Compose stack"
+(cd "$LOCAL_DIR" && docker compose up -d)
+
 # ------------------------------------------------------- Lid-close behavior
 log "Configuring lid-close behavior (restarting logind may interrupt active sessions)"
 install -d -m 0755 /etc/systemd/logind.conf.d
@@ -193,6 +257,8 @@ EOF
 systemctl restart systemd-logind
 
 log "Provisioning complete for domain: $DOMAIN"
+echo "  - Stack: docker compose ps"
 echo "  - Renewal timer: systemctl list-timers certbot-renew.timer"
 echo "  - Compose update timer: systemctl list-timers homelab-compose-update.timer"
+echo "  - Next: point your router's DHCP DNS at $LAN_IP (see readme 'Local DNS')"
 echo "  - If you were added to the docker group, log out and back in first."
