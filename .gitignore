@@ -5,4 +5,7 @@
 .env**
 !.env.example
 
+# Wireguard configs hold private keys — never commit them.
+local/wireguard/wg0.conf
+
 .fresh-cache

@@ -4,7 +4,7 @@
 
 The idea here is to have a basic but secure homelab setup that can be accessed in the local home network without traversing the wider internet, but is available through an inexpensive thin proxy when away from home.
 
-The homelab itself should use as "vanilla" an open source tech stack as possible. To that end, it assumes Ubuntu LTS as the base host environment, Docker to contain all the applications with as little changes to the Ubuntu host environment as possible. Nginx will be used to host all the applications and Certbot from Let's Encrypt will create and maintain the HTTPS certs.
+The homelab itself should use as "vanilla" an open source tech stack as possible. To that end, it assumes Ubuntu Server LTS as the base host environment (headless), Docker to contain all the applications with as little changes to the Ubuntu host environment as possible. Nginx will be used to host all the applications and Certbot from Let's Encrypt will create and maintain the HTTPS certs.
 
 * Two nodes:
   1. The "home" node located on premises in the house, which hosts all the applications in docker containers, creates and updates the HTTPS/SSL certs in a host level cron job, and serves local DNS on the home network so all home network traffic going to hosted applications doesn't have to leave the home network and consume edge node bandwidth. All hosted applications will be at `https://<app>.$DOMAIN` (see `DOMAIN` in `local/.env`).
@@ -23,8 +23,12 @@ This homelab setup has two main parts:
 
 ## Apps
 
-* Jellyfin
-* Pi-hole (local DNS + ad blocking)
+All apps are reachable from the LAN on their default ports (bound to
+`HOMELAB_IP`), in addition to the HTTPS reverse proxy at `https://<app>.$DOMAIN`:
+
+* Jellyfin — `http://<HOMELAB_IP>:8096`
+* Pi-hole (local DNS + ad blocking) — `http://<HOMELAB_IP>:8083/admin`, DNS on
+  `<HOMELAB_IP>:53`
 * Immich (Someday)
 
 ## Local DNS (Pi-hole)
@@ -33,10 +37,10 @@ Pi-hole runs on the home node and serves DNS for the whole home network, so
 traffic to hosted apps resolves to the home node and never leaves the LAN. It
 also filters ads and trackers, forwarding unblocked queries to Quad9 (9.9.9.9).
 
-* DNS: `53/tcp` and `53/udp` on the home node, bound to `LAN_IP`
+* DNS: `53/tcp` and `53/udp` on the home node, bound to `HOMELAB_IP`
 * Web UI: `https://dns.$DOMAIN/admin` from LAN clients using Pi-hole for DNS
   (after the wildcard certificate is issued and Nginx is running)
-* Last-resort local access on the home node: `http://127.0.0.1:8083/admin`
+* Direct access from the LAN: `http://<HOMELAB_IP>:8083/admin`
 * Data: persisted in `local/.pihole/etc-pihole/` (gitignored)
 * Config: `local/.env` (gitignored; created by provision.sh from
   [local/.env.example](local/.env.example))
@@ -44,8 +48,8 @@ also filters ads and trackers, forwarding unblocked queries to Quad9 (9.9.9.9).
 Compose configures local DNS records for the hosted apps:
 
 ```text
-dns.$DOMAIN       ->  LAN_IP
-jellyfin.$DOMAIN  ->  LAN_IP
+dns.$DOMAIN       ->  HOMELAB_IP
+jellyfin.$DOMAIN  ->  HOMELAB_IP
 ```
 
 Add future app records to `FTLCONF_dns_hosts` in [local/compose.yml](local/compose.yml).
@@ -71,7 +75,7 @@ below):
 * `DOMAIN` — your base domain. Nginx server names and cert paths
   ([local/nginx/templates/jellyfin.conf.template](local/nginx/templates/jellyfin.conf.template)),
   Jellyfin's published URL, and the TLS scripts all read it.
-* `LAN_IP` — the home node's static IP on the LAN. Pi-hole's DNS listener
+* `HOMELAB_IP` — the home node's static IP on the LAN. Pi-hole's DNS listener
   (port 53) binds to it.
 * `TZ` — timezone for containers that honor it (Pi-hole).
 * `PIHOLE_PASSWORD` — Pi-hole web UI password.
@@ -83,7 +87,7 @@ Workflow" below), so no manual DNS records are needed for cert issuance.
 ## Provisioning the home node
 
 Clone the repo to a neutral, system-level location rather than a user home
-directory — the cert renewal systemd timer runs
+directory such as `/opt/homelab`. The cert renewal systemd timer runs
 [local/scripts/renew-and-reload.sh](local/scripts/renew-and-reload.sh) by absolute
 path as root, so the checkout shouldn't depend on a user account:
 
@@ -106,8 +110,10 @@ On first run it prompts for the `local/.env` values listed under
 your user, so it's safe even though `/opt` directories are world-readable by
 default), then:
 
-1. Installs OpenSSH Server, UFW, and unattended-upgrades, and restricts SSH
-   access to the connected LAN subnet.
+1. Installs OpenSSH Server, UFW, and unattended-upgrades, and allows SSH and
+   the app ports (80, 443, 53, 8083, 8096, 51820/udp) from the connected LAN
+   subnet, plus SSH, 80, 443, and 51820/udp from the Wireguard tunnel
+   (`10.0.0.0/24`).
 1. Installs Docker Engine and the compose plugin and adds your user to the
    `docker` group (takes effect on next login).
 1. Creates the host directories the compose stack bind-mounts
@@ -125,7 +131,7 @@ default), then:
 1. Starts the Compose stack (`docker compose up -d`).
 
 After provisioning, the one remaining manual step is pointing your router's
-DHCP DNS at the home node's `LAN_IP` so LAN clients use Pi-hole (see "Local
+DHCP DNS at the home node's `HOMELAB_IP` so LAN clients use Pi-hole (see "Local
 DNS (Pi-hole)" above).
 
 ## TLS Cert Workflow (Docker)

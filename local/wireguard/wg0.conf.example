@@ -1,0 +1,19 @@
+# Wireguard config for the home node (10.0.0.1/24).
+# Copy this file to wg0.conf and fill in the real private key.
+# wg0.conf is gitignored — never commit it.
+#
+# Generate a keypair with:
+#   wg genkey | tee privatekey | wg pubkey > publickey
+#
+# The edge VPS peer config goes in vps/ (see vps/compose.yml).
+
+[Interface]
+PrivateKey = <private_key>
+Address = 10.0.0.1/24
+ListenPort = 51820
+
+# [Peer]
+# PublicKey = <edge_vps_public_key>
+# AllowedIPs = 10.0.0.2/32
+# Endpoint = <edge_vps_public_ip>:51820
+# PersistentKeepalive = 25

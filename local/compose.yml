@@ -3,6 +3,8 @@ services:
     image: jellyfin/jellyfin:latest
     container_name: jellyfin
     restart: unless-stopped
+    ports:
+      - "${HOMELAB_IP:?set HOMELAB_IP in local/.env}:8096:8096"
     volumes:
       - ./.jellyfin/config:/config
       - ./.jellyfin/cache:/cache
@@ -54,9 +56,9 @@ services:
     container_name: pihole
     restart: unless-stopped
     ports:
-      - "${LAN_IP:?set LAN_IP in local/.env}:53:53/tcp"
-      - "${LAN_IP:?set LAN_IP in local/.env}:53:53/udp"
-      - "127.0.0.1:8083:80/tcp"
+      - "${HOMELAB_IP:?set HOMELAB_IP in local/.env}:53:53/tcp"
+      - "${HOMELAB_IP:?set HOMELAB_IP in local/.env}:53:53/udp"
+      - "${HOMELAB_IP:?set HOMELAB_IP in local/.env}:8083:80/tcp"
     environment:
       TZ: ${TZ:-America/Chicago}
       FTLCONF_webserver_api_password: ${PIHOLE_PASSWORD:?set PIHOLE_PASSWORD in local/.env}
@@ -64,8 +66,8 @@ services:
       FTLCONF_dns_upstreams: 9.9.9.9
       # Compose owns app host records; this Pi-hole setting is read-only in its UI.
       FTLCONF_dns_hosts: |-
-        ${LAN_IP:?set LAN_IP in local/.env} dns.${DOMAIN:?set DOMAIN in local/.env}
-        ${LAN_IP:?set LAN_IP in local/.env} jellyfin.${DOMAIN:?set DOMAIN in local/.env}
+        ${HOMELAB_IP:?set HOMELAB_IP in local/.env} dns.${DOMAIN:?set DOMAIN in local/.env}
+        ${HOMELAB_IP:?set HOMELAB_IP in local/.env} jellyfin.${DOMAIN:?set DOMAIN in local/.env}
     volumes:
       - ./.pihole/etc-pihole:/etc/pihole
     

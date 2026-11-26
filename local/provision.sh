@@ -9,8 +9,7 @@ set -euo pipefail
 #     (see scripts/install-cert-renew-timer.sh)
 #   - Initial TLS cert issuance (see scripts/issue-initial-cert.sh)
 #   - Starts the Compose stack
-#   - SSH, LAN-scoped firewall access, lid-close behavior, and automatic
-#     OS/container updates
+#   - SSH, LAN-scoped firewall access, and automatic OS/container updates
 #
 # Run as root (from the local/ directory):
 #   sudo ./provision.sh
@@ -19,7 +18,7 @@ set -euo pipefail
 # node"); the systemd timer runs the renewal script from wherever this
 # checkout lives, so other locations work too.
 #
-# Idempotent: safe to re-run; SSH, firewall, lid, and update policies are enforced.
+# Idempotent: safe to re-run; SSH, firewall, and update policies are enforced.
 
 SCRIPT_DIR="$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)"
 LOCAL_DIR="$SCRIPT_DIR"
@@ -51,8 +50,8 @@ if [ ! -f "$ENV_FILE" ]; then
     echo "  DOMAIN is required (nginx server names and cert paths use it)."
   done
 
-  read -r -p "Home node's static LAN IP [192.168.1.166]: " LAN_IP || LAN_IP=""
-  LAN_IP="${LAN_IP:-192.168.1.166}"
+  read -r -p "Home node's static IP on the LAN [192.168.1.166]: " HOMELAB_IP || HOMELAB_IP=""
+  HOMELAB_IP="${HOMELAB_IP:-192.168.1.166}"
 
   read -r -p "Timezone [America/Chicago]: " TZ || TZ=""
   TZ="${TZ:-America/Chicago}"
@@ -68,9 +67,9 @@ if [ ! -f "$ENV_FILE" ]; then
   # Values go through the environment (not awk -v) so backslashes in them
   # survive; umask keeps the file private from the moment it's created.
   ( umask 077
-    DOMAIN="$DOMAIN" LAN_IP="$LAN_IP" TZ="$TZ" PIHOLE_PASSWORD="$PIHOLE_PASSWORD" \
+    DOMAIN="$DOMAIN" HOMELAB_IP="$HOMELAB_IP" TZ="$TZ" PIHOLE_PASSWORD="$PIHOLE_PASSWORD" \
     awk '
-      BEGIN { split("DOMAIN LAN_IP TZ PIHOLE_PASSWORD", keys, " ") }
+      BEGIN { split("DOMAIN HOMELAB_IP TZ PIHOLE_PASSWORD", keys, " ") }
       {
         for (i = 1; i <= 4; i++)
           if (index($0, keys[i] "=") == 1) { print keys[i] "=" ENVIRON[keys[i]]; next }
@@ -82,7 +81,7 @@ if [ ! -f "$ENV_FILE" ]; then
   chmod 600 "$ENV_FILE"
 
   # Fail loudly if .env.example and the prompt list ever drift apart.
-  for key in DOMAIN LAN_IP TZ PIHOLE_PASSWORD; do
+  for key in DOMAIN HOMELAB_IP TZ PIHOLE_PASSWORD; do
     if ! grep -q "^$key=" "$ENV_FILE"; then
       echo "ERROR: $key missing from $ENV_FILE; update the prompt list in $0." >&2
       exit 1
@@ -94,7 +93,7 @@ fi
 # DOMAIN comes from local/.env (cert paths depend on it).
 DOMAIN="$(grep -E '^DOMAIN=' "$ENV_FILE" | tail -n1 | cut -d= -f2-)"
 : "${DOMAIN:?DOMAIN must be set in local/.env (delete it to redo the setup prompts)}"
-LAN_IP="$(grep -E '^LAN_IP=' "$ENV_FILE" | tail -n1 | cut -d= -f2-)"
+HOMELAB_IP="$(grep -E '^HOMELAB_IP=' "$ENV_FILE" | tail -n1 | cut -d= -f2-)"
 
 # -------------------------------------------------------- SSH and firewall
 log "Installing OpenSSH Server, UFW, and unattended-upgrades"
@@ -102,8 +101,25 @@ apt-get update
 apt-get install -y openssh-server ufw unattended-upgrades
 systemctl enable --now ssh
 
+# Harden SSH: key-only auth, no root login. The invoking user's authorized_keys
+# must already be in place (or password auth will be locked out).
+log "Hardening SSH (key-only auth, no root login)"
+install -d -m 0755 /etc/ssh/sshd_config.d
+tee /etc/ssh/sshd_config.d/90-homelab.conf > /dev/null <<'EOF'
+PasswordAuthentication no
+PermitRootLogin no
+PubkeyAuthentication yes
+KbdInteractiveAuthentication no
+EOF
+systemctl reload ssh
+
+# The Wireguard tunnel to the edge VPS (see local/wireguard/wg0.conf). The
+# edge node reaches this host through it, so it needs the same access as the
+# LAN for the ports the edge proxies.
+WG_CIDR="10.0.0.0/24"
+
 if ! ROUTE="$(ip -4 route get 1.1.1.1 2>/dev/null)"; then
-  echo "Error: unable to determine the active LAN IPv4 route for SSH." >&2
+  echo "Error: unable to determine the active LAN IPv4 route." >&2
   exit 1
 fi
 LAN_IFACE="$(awk '{for (i = 1; i <= NF; i++) if ($i == "dev") {print $(i + 1); exit}}' <<< "$ROUTE")"
@@ -126,8 +142,27 @@ if [ -z "$LAN_CIDR" ]; then
   echo "Error: unable to determine the connected LAN subnet for $LAN_IFACE ($LAN_SOURCE)." >&2
   exit 1
 fi
-log "Restricting SSH access to $LAN_CIDR"
+log "Allowing SSH from $LAN_CIDR and $WG_CIDR"
 ufw allow from "$LAN_CIDR" to any port 22 proto tcp
+ufw allow from "$WG_CIDR" to any port 22 proto tcp
+
+# App ports, reachable from the LAN. Docker publishes ports via iptables,
+# which bypasses UFW's INPUT chain, so these rules are belt and braces — but
+# they keep the policy honest if Docker's iptables handling ever changes.
+# The app ports are bound to HOMELAB_IP in compose.yml, so the tunnel can't
+# reach them; only the all-interfaces ports (22, 80, 443, 51820/udp) get
+# tunnel rules.
+log "Allowing app ports from $LAN_CIDR"
+for port in 80 443 8096 8083; do
+  ufw allow from "$LAN_CIDR" to any port "$port" proto tcp
+done
+ufw allow from "$LAN_CIDR" to any port 53 proto tcp
+ufw allow from "$LAN_CIDR" to any port 53 proto udp
+ufw allow from "$LAN_CIDR" to any port 51820 proto udp
+log "Allowing tunnel access to 80, 443, 51820/udp from $WG_CIDR"
+ufw allow from "$WG_CIDR" to any port 80 proto tcp
+ufw allow from "$WG_CIDR" to any port 443 proto tcp
+ufw allow from "$WG_CIDR" to any port 51820 proto udp
 
 # Existing unrestricted SSH rules would override the LAN-only rule.
 remove_unrestricted_ssh_rules() {
@@ -162,6 +197,26 @@ remove_unrestricted_ssh_rules
 ufw default deny incoming
 ufw default allow outgoing
 ufw --force enable
+
+# Docker publishes ports via iptables (DOCKER chain), which is evaluated
+# before UFW's INPUT chain — so `ufw default deny incoming` does NOT block
+# Docker-published ports. Bind app ports to HOMELAB_IP in compose.yml (done)
+# and add explicit DOCKER-USER rules so the tunnel/LAN scoping is enforced
+# even for Docker-published ports.
+log "Installing DOCKER-USER iptables rules for LAN/tunnel scoping"
+apt-get install -y iptables-persistent
+# Allow established/related, loopback, LAN, and tunnel; drop the rest.
+# Docker's DOCKER-USER chain is jumped to before DOCKER, so this gates all
+# Docker-published ports.
+for rule in \
+  "-m conntrack --ctstate ESTABLISHED,RELATED -j RETURN" \
+  "-i lo -j RETURN" \
+  "-s $LAN_CIDR -j RETURN" \
+  "-s $WG_CIDR -j RETURN" \
+  "-j DROP"; do
+  iptables -C DOCKER-USER $rule 2>/dev/null || iptables -I DOCKER-USER $rule
+done
+netfilter-persistent save
 
 # --------------------------------------------------- Automatic updates ----
 log "Enabling daily unattended upgrades"
@@ -245,20 +300,9 @@ fi
 log "Starting the Compose stack"
 (cd "$LOCAL_DIR" && docker compose up -d)
 
-# ------------------------------------------------------- Lid-close behavior
-log "Configuring lid-close behavior (restarting logind may interrupt active sessions)"
-install -d -m 0755 /etc/systemd/logind.conf.d
-tee /etc/systemd/logind.conf.d/90-homelab-lid.conf > /dev/null <<'EOF'
-[Login]
-HandleLidSwitch=ignore
-HandleLidSwitchExternalPower=ignore
-HandleLidSwitchDocked=ignore
-EOF
-systemctl restart systemd-logind
-
 log "Provisioning complete for domain: $DOMAIN"
 echo "  - Stack: docker compose ps"
 echo "  - Renewal timer: systemctl list-timers certbot-renew.timer"
 echo "  - Compose update timer: systemctl list-timers homelab-compose-update.timer"
-echo "  - Next: point your router's DHCP DNS at $LAN_IP (see readme 'Local DNS')"
+echo "  - Next: point your router's DHCP DNS at $HOMELAB_IP (see readme 'Local DNS')"
 echo "  - If you were added to the docker group, log out and back in first."
